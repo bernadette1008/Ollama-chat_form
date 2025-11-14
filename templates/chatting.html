@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Ollama Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { 
+      --sidebar-width: 260px;
+      --bg-primary: #ffffff;
+      --bg-secondary: #f9fafb;
+      --bg-hover: #f3f4f6;
+      --border-color: #e5e7eb;
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --user-bg: #e0e7ff;
+      --ai-bg: #f3f4f6;
+      --accent: #4f46e5;
+    }
+    
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text-primary);
+      background: var(--bg-primary);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .container {
+      display: flex;
+      height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-width);
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      transition: margin-left 0.3s ease;
+    }
+
+    .sidebar.hidden {
+      margin-left: calc(-1 * var(--sidebar-width));
+    }
+
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .new-chat-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .new-chat-btn:hover {
+      opacity: 0.9;
+    }
+
+    .chat-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .chat-item {
+      padding: 12px;
+      margin-bottom: 4px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chat-item:hover {
+      background: var(--bg-hover);
+    }
+
+    .chat-item.active {
+      background: var(--bg-hover);
+      font-weight: 500;
+    }
+
+    .chat-item-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .delete-btn {
+      padding: 4px 8px;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .chat-item:hover .delete-btn {
+      opacity: 1;
+    }
+
+    .delete-btn:hover {
+      background: rgba(239, 68, 68, 0.1);
+      color: #dc2626;
+    }
+
+    /* Main Content */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .toggle-sidebar {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      padding: 8px 12px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      cursor: pointer;
+      z-index: 10;
+      transition: background 0.2s;
+    }
+
+    .toggle-sidebar:hover {
+      background: var(--bg-hover);
+    }
+
+    /* Empty State (중앙 입력) */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      padding: 40px 20px;
+    }
+
+    .empty-state h1 {
+      font-size: 32px;
+      margin-bottom: 40px;
+      color: var(--text-primary);
+    }
+
+    .empty-state .input-area {
+      width: 100%;
+      max-width: 700px;
+    }
+
+    /* Chat Area */
+    .chat-area {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .chat-area.active {
+      display: flex;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .message {
+      display: flex;
+      gap: 12px;
+      max-width: 800px;
+      animation: fadeIn 0.3s;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.user {
+      margin-left: auto;
+      flex-direction: row-reverse;
+    }
+
+    .message-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .message.user .message-avatar {
+      background: var(--user-bg);
+      color: #4338ca;
+    }
+
+    .message.assistant .message-avatar {
+      background: var(--ai-bg);
+      color: var(--text-primary);
+    }
+
+    .message-content {
+      padding: 12px 16px;
+      border-radius: 16px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      line-height: 1.6;
+    }
+
+    .message.user .message-content {
+      background: var(--user-bg);
+      color: #1e1b4b;
+    }
+
+    .message.assistant .message-content {
+      background: var(--ai-bg);
+      color: var(--text-primary);
+    }
+
+    /* Input Area */
+    .input-area {
+      padding: 20px;
+      border-top: 1px solid var(--border-color);
+      background: var(--bg-primary);
+    }
+
+    .input-wrapper {
+      max-width: 700px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .input-container {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      background: var(--bg-secondary);
+      border: 2px solid var(--border-color);
+      border-radius: 16px;
+      transition: border-color 0.2s;
+    }
+
+    .input-container:focus-within {
+      border-color: var(--accent);
+    }
+
+    textarea {
+      flex: 1;
+      border: none;
+      background: transparent;
+      resize: none;
+      font-size: 15px;
+      font-family: inherit;
+      color: var(--text-primary);
+      outline: none;
+      max-height: 200px;
+    }
+
+    .send-btn {
+      padding: 8px 16px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      align-self: flex-end;
+    }
+
+    .send-btn:hover:not(:disabled) {
+      opacity: 0.9;
+    }
+
+    .send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .model-select {
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .model-select input {
+      margin-left: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <button class="new-chat-btn" id="newChatBtn">+ 새로운 채팅</button>
+      </div>
+      <div class="chat-list" id="chatList"></div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <button class="toggle-sidebar" id="toggleSidebar">☰</button>
+
+      <!-- Empty State (처음 상태) -->
+      <div class="empty-state" id="emptyState">
+        <h1>무엇을 도와드릴까요?</h1>
+        <div class="input-area">
+          <div class="input-wrapper">
+            <div class="model-select">
+              <label>모델: <input type="text" id="modelInputEmpty" value="gemma3:4b" /></label>
+            </div>
+            <div class="input-container">
+              <textarea id="promptEmpty" placeholder="메시지를 입력하세요..." rows="1"></textarea>
+              <button class="send-btn" id="sendBtnEmpty">전송</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Area (대화 시작 후) -->
+      <div class="chat-area" id="chatArea">
+        <div class="messages" id="messages"></div>
+        <div class="input-area">
+          <div class="input-wrapper">
+            <div class="model-select">
+              <label>모델: <input type="text" id="modelInputChat" value="gemma3:4b" /></label>
+            </div>
+            <div class="input-container">
+              <textarea id="promptChat" placeholder="메시지를 입력하세요..." rows="1"></textarea>
+              <button class="send-btn" id="sendBtnChat">전송</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    
+    // Elements
+    const sidebar = $("sidebar");
+    const toggleSidebarBtn = $("toggleSidebar");
+    const newChatBtn = $("newChatBtn");
+    const chatList = $("chatList");
+    const emptyState = $("emptyState");
+    const chatArea = $("chatArea");
+    const messages = $("messages");
+    const promptEmpty = $("promptEmpty");
+    const sendBtnEmpty = $("sendBtnEmpty");
+    const promptChat = $("promptChat");
+    const sendBtnChat = $("sendBtnChat");
+    const modelInputEmpty = $("modelInputEmpty");
+    const modelInputChat = $("modelInputChat");
+
+    // State
+    let chats = JSON.parse(localStorage.getItem("ollama_chats") || "[]");
+    let currentChatId = null;
+    let isSending = false;
+
+    // Initialize
+    renderChatList();
+    if (chats.length > 0) {
+      loadChat(chats[0].id);
+    }
+
+    // Toggle Sidebar
+    toggleSidebarBtn.addEventListener("click", () => {
+      sidebar.classList.toggle("hidden");
+    });
+
+    // New Chat
+    newChatBtn.addEventListener("click", createNewChat);
+
+    function createNewChat() {
+      const newChat = {
+        id: Date.now(),
+        title: "새로운 채팅",
+        messages: [],
+        model: modelInputEmpty.value || "gemma3:4b"
+      };
+      chats.unshift(newChat);
+      saveChats();
+      renderChatList();
+      loadChat(newChat.id);
+    }
+
+    function renderChatList() {
+      chatList.innerHTML = chats.map(chat => `
+        <div class="chat-item ${chat.id === currentChatId ? 'active' : ''}" data-id="${chat.id}">
+          <span class="chat-item-title">${chat.title}</span>
+          <button class="delete-btn" data-id="${chat.id}">삭제</button>
+        </div>
+      `).join("");
+
+      // Event listeners
+      chatList.querySelectorAll(".chat-item").forEach(item => {
+        item.addEventListener("click", (e) => {
+          if (!e.target.classList.contains("delete-btn")) {
+            loadChat(parseInt(item.dataset.id));
+          }
+        });
+      });
+
+      chatList.querySelectorAll(".delete-btn").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          deleteChat(parseInt(btn.dataset.id));
+        });
+      });
+    }
+
+    function loadChat(chatId) {
+      currentChatId = chatId;
+      const chat = chats.find(c => c.id === chatId);
+      
+      if (!chat) return;
+
+      modelInputChat.value = chat.model;
+      modelInputEmpty.value = chat.model;
+
+      if (chat.messages.length === 0) {
+        emptyState.style.display = "flex";
+        chatArea.classList.remove("active");
+      } else {
+        emptyState.style.display = "none";
+        chatArea.classList.add("active");
+        renderMessages(chat.messages);
+      }
+
+      renderChatList();
+    }
+
+    function deleteChat(chatId) {
+      if (!confirm("이 채팅을 삭제하시겠습니까?")) return;
+      
+      chats = chats.filter(c => c.id !== chatId);
+      saveChats();
+      
+      if (currentChatId === chatId) {
+        if (chats.length > 0) {
+          loadChat(chats[0].id);
+        } else {
+          currentChatId = null;
+          emptyState.style.display = "flex";
+          chatArea.classList.remove("active");
+        }
+      }
+      
+      renderChatList();
+    }
+
+    function renderMessages(msgs) {
+      messages.innerHTML = msgs.map(msg => `
+        <div class="message ${msg.role}">
+          <div class="message-avatar">${msg.role === 'user' ? 'U' : 'AI'}</div>
+          <div class="message-content">${msg.content}</div>
+        </div>
+      `).join("");
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function addMessage(role, content) {
+      const chat = chats.find(c => c.id === currentChatId);
+      if (!chat) return;
+
+      chat.messages.push({ role, content });
+      
+      // Update title with first user message
+      if (role === 'user' && chat.messages.filter(m => m.role === 'user').length === 1) {
+        chat.title = content.substring(0, 30) + (content.length > 30 ? "..." : "");
+      }
+
+      saveChats();
+      renderMessages(chat.messages);
+      renderChatList();
+    }
+
+    function saveChats() {
+      localStorage.setItem("ollama_chats", JSON.stringify(chats));
+    }
+
+    async function sendMessage(prompt, isFromEmpty = false) {
+      if (!prompt.trim() || isSending) return;
+
+      // Create new chat if needed
+      if (!currentChatId) {
+        createNewChat();
+      }
+
+      const chat = chats.find(c => c.id === currentChatId);
+      const model = isFromEmpty ? modelInputEmpty.value : modelInputChat.value;
+
+      // Switch to chat view
+      if (isFromEmpty) {
+        emptyState.style.display = "none";
+        chatArea.classList.add("active");
+        promptEmpty.value = "";
+      } else {
+        promptChat.value = "";
+      }
+
+      // Add user message
+      addMessage("user", prompt);
+
+      // Disable inputs
+      isSending = true;
+      sendBtnEmpty.disabled = true;
+      sendBtnChat.disabled = true;
+      sendBtnChat.innerHTML = '<span class="spinner"></span>';
+
+      // Create empty assistant message
+      const tempMsg = { role: "assistant", content: "" };
+      chat.messages.push(tempMsg);
+      renderMessages(chat.messages);
+
+      try {
+        const resp = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: model,
+            messages: chat.messages.filter(m => m.content) // Exclude empty temp message
+          }),
+        });
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+
+        let assistantContent = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          for (const line of chunk.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            try {
+              const obj = JSON.parse(trimmed);
+              if (obj.message && typeof obj.message.content === "string") {
+                assistantContent += obj.message.content;
+                tempMsg.content = assistantContent;
+                renderMessages(chat.messages);
+              }
+            } catch (e) {
+              // Skip parsing errors
+            }
+          }
+        }
+
+        saveChats();
+        renderChatList();
+      } catch (e) {
+        tempMsg.content = "[오류] 응답을 가져오는 중 문제가 발생했습니다.";
+        renderMessages(chat.messages);
+        console.error(e);
+      } finally {
+        isSending = false;
+        sendBtnEmpty.disabled = false;
+        sendBtnChat.disabled = false;
+        sendBtnChat.innerHTML = '전송';
+      }
+    }
+
+    // Event Listeners
+    sendBtnEmpty.addEventListener("click", () => {
+      sendMessage(promptEmpty.value, true);
+    });
+
+    sendBtnChat.addEventListener("click", () => {
+      sendMessage(promptChat.value, false);
+    });
+
+    promptEmpty.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage(promptEmpty.value, true);
+      }
+    });
+
+    promptChat.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage(promptChat.value, false);
+      }
+    });
+
+    // Auto-resize textareas
+    [promptEmpty, promptChat].forEach(textarea => {
+      textarea.addEventListener("input", () => {
+        textarea.style.height = "auto";
+        textarea.style.height = textarea.scrollHeight + "px";
+      });
+    });
+  </script>
+</body>
+</html>

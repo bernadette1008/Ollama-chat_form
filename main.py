@@ -11,6 +11,10 @@ def index():
 @app.get("/2")
 def index2():
     return render_template("index3.html")
+
+@app.get("/3")
+def index3():
+    return render_template("chatting.html")
  
 @app.post("/api/chat")
 def chat_stream():
